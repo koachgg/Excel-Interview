@@ -1,58 +1,28 @@
-# Multi-stage build for production optimization
-FROM node:18-alpine AS frontend-builder
+# Read the doc: https://huggingface.co/docs/hub/spaces-sdks-docker
+# HF Spaces Docker setup for Excel Interview AI
 
-# Set working directory for frontend build
-WORKDIR /app/frontend
-
-# Copy frontend package files
-COPY frontend/package*.json ./
-
-# Install frontend dependencies
-RUN npm ci --only=production
-
-# Copy frontend source code
-COPY frontend/ ./
-
-# Build frontend for production
-RUN npm run build
-
-# Python backend stage
 FROM python:3.11-slim
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PORT=8000
+# Create non-root user as required by HF Spaces
+RUN useradd -m -u 1000 user
+USER user
+ENV PATH="/home/user/.local/bin:$PATH"
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Copy requirements and install Python dependencies
+COPY --chown=user requirements.txt requirements.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
-# Copy backend requirements
-COPY server/requirements.txt ./
+# Copy the entire application
+COPY --chown=user . /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Set environment variables
+ENV PYTHONPATH=/app/server
+ENV PORT=7860
 
-# Copy backend source code
-COPY server/ ./
+# Expose the port
+EXPOSE 7860
 
-# Copy built frontend from previous stage
-COPY --from=frontend-builder /app/frontend/dist ./static
-
-# Create database directory
-RUN mkdir -p data
-
-# Expose port
-EXPOSE $PORT
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD python -c "import requests; requests.get('http://localhost:${PORT}/health')" || exit 1
-
-# Start command
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application
+CMD ["python", "app.py"]

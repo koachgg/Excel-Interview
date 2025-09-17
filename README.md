@@ -3,12 +3,10 @@ title: Excel Interview AI
 emoji: 📊
 colorFrom: blue
 colorTo: green
-sdk: gradio
-sdk_version: 4.36.1
-app_file: app.py
+sdk: docker
+app_port: 7860
 pinned: false
 license: mit
-python_version: 3.11
 ---
 
 # 🎯 Excel Interview AI System
