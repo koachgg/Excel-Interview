@@ -1,0 +1,23 @@
+# Core FastAPI and web framework (latest compatible versions)
+fastapi
+uvicorn
+websockets
+python-multipart
+
+# Database
+sqlalchemy
+# sqlite3 is built into Python standard library
+
+# LLM providers (install as needed)
+# google-generativeai
+# anthropic
+httpx
+
+# Data handling
+pandas
+pydantic
+
+# Development and testing
+pytest
+pytest-asyncio
+requests

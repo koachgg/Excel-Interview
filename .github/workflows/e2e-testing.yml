@@ -1,0 +1,208 @@
+name: E2E Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run E2E tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      # Test database
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_interviews
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Python dependencies
+      run: |
+        cd server
+        pip install -r requirements.txt
+    
+    - name: Install Playwright
+      run: |
+        cd frontend
+        npm ci
+        npx playwright install --with-deps chromium firefox webkit
+    
+    - name: Start backend server
+      run: |
+        cd server
+        uvicorn main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_interviews
+        MOCK_LLM_RESPONSES: true
+        SEED_DATABASE_ON_STARTUP: true
+        GEMINI_API_KEY: test_key
+        GROQ_API_KEY: test_key
+        ANTHROPIC_API_KEY: test_key
+    
+    - name: Build and serve frontend
+      run: |
+        cd frontend
+        npm run build
+        npx serve -s dist -l 3000 &
+        sleep 5
+    
+    - name: Wait for services
+      run: |
+        npx wait-on http://localhost:8000/health
+        npx wait-on http://localhost:3000
+    
+    - name: Run Playwright tests
+      run: |
+        cd frontend
+        npx playwright test
+      env:
+        BASE_URL: http://localhost:3000
+        API_BASE_URL: http://localhost:8000
+    
+    - name: Upload Playwright report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: playwright-report
+        path: frontend/playwright-report/
+        retention-days: 30
+
+  # Performance Testing
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        cd server
+        pip install -r requirements.txt
+        pip install locust
+    
+    - name: Start server
+      run: |
+        cd server
+        uvicorn main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+      env:
+        DATABASE_URL: sqlite:///./test.db
+        MOCK_LLM_RESPONSES: true
+    
+    - name: Run load tests
+      run: |
+        cd server/tests
+        locust -f locustfile.py --headless -u 10 -r 2 -t 60s --host http://localhost:8000
+    
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: server/tests/locust_*.html
+
+  # Visual Regression Testing
+  visual-regression:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run Percy visual tests
+      run: |
+        cd frontend
+        npx percy exec -- npm run test:visual
+      env:
+        PERCY_TOKEN: ${{ secrets.PERCY_TOKEN }}
+
+  # Accessibility Testing
+  accessibility-tests:
+    name: Accessibility Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+        npx playwright install --with-deps chromium
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+        npx serve -s dist -l 3000 &
+        sleep 5
+    
+    - name: Run accessibility tests
+      run: |
+        cd frontend
+        npx playwright test --grep="@accessibility"
+    
+    - name: Upload accessibility results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: accessibility-results
+        path: frontend/accessibility-report/

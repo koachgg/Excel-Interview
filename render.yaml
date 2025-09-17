@@ -1,0 +1,54 @@
+services:
+  - type: web
+    name: excel-interviewer-api
+    env: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: DATABASE_URL
+        value: sqlite:///./data/interviews.db
+      - key: DEBUG  
+        value: false
+      - key: CORS_ORIGINS
+        value: https://excel-interviewer-api.onrender.com
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: PRIMARY_LLM_PROVIDER
+        value: gemini
+      - key: DAILY_COST_LIMIT
+        value: 50.00
+      - key: PROVIDER_COST_LIMITS
+        value: '{"gemini": 30.00, "groq": 5.00, "claude": 15.00}'
+    disk:
+      name: excel-interviewer-data
+      mountPath: /app/data
+      sizeGB: 1
+    healthCheckPath: /health
+    
+  # Optional: Static site for frontend (if deploying separately)
+  - type: static
+    name: excel-interviewer-frontend
+    staticPublishPath: ./frontend/dist
+    buildCommand: cd frontend && npm ci && npm run build
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=86400
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+# Optional: Database service (if using PostgreSQL)
+databases:
+  - name: excel-interviews-db
+    databaseName: excel_interviews
+    user: interview_user
+    plan: free  # Free tier: 1GB storage, 97 hours uptime/month
